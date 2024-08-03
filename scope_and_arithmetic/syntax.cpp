@@ -39,7 +39,11 @@ int main ( void ) {
   a &= 0xff; //0101 1010 & 1111 1111 = 0101 1010
   a ^= 0; //0000 0001 ^ 1111 1110 = 1111 1111 ^ (0xffFFffFFffffffff)
   a = ~a; //a ^= 0xfffff...ff
-  a != a; //if anything but 0 -> 1; otherwise -> 0
+
+  //**I wasn't thinking clearly and made a mistake in the video.**
+  //!= is used like if ( a != b ).
+  //If one were to say "bool b = 1 != 0;" then b would be "true."
+  a = !a; //if anything but 0 -> 1; otherwise -> 0
 
   const int8_t i = 17;
 
