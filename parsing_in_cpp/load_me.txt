@@ -1,0 +1,8 @@
+TepidCoder=Unenthused
+Sky=Blue
+Clouds=Grey
+Birds=Annoying
+Dogs=Bark
+Width=100
+Height=1.2%
+ThisIsAReallyLongKeyThatProbablyIsGoingToCauseUsGrief=InTheNearFuture,Don'tYouThinkSo?!one!oneExclamation mark!oneone

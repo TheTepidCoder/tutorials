@@ -6,3 +6,7 @@
 *.exe
 *.pch
 *.pdb
+**/debug*/**
+**/release/**
+*.log
+**/.vs/**
