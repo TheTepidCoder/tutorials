@@ -115,7 +115,7 @@ bool string::set_string ( const char *lpsz_string ) {
 
   m_lpsz_string = strdup ( lpsz_string );
 
-  if ( m_lpsz_string ) {
+  if ( ! m_lpsz_string ) {
     return false;
   }
 
