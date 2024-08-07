@@ -1,0 +1,106 @@
+#include "stdio.h"
+#include "stdlib.h"
+#include "stdint.h"
+#include "inttypes.h"
+
+#include <vector>
+
+void flood_fill (
+  std::vector<uint8_t> &v_picture,
+  size_t st_width, //so we can multiply this by the y position
+  size_t st_height,
+  size_t st_x,
+  size_t st_y,
+  uint8_t ui8_value_to_fill_with
+) {
+  if ( v_picture [ st_x + st_y*st_width ] == ui8_value_to_fill_with ) {
+    return;
+  }
+
+  v_picture [ st_x + st_y*st_width ] = ui8_value_to_fill_with;
+
+  //If the value left of us isn't out of bounds.
+  if ( st_x > 0 ) {
+    if ( v_picture [ (st_x-1) + st_y*st_width ] != ui8_value_to_fill_with ) {
+      flood_fill ( v_picture, st_width, st_height, st_x-1, st_y, ui8_value_to_fill_with );
+    }
+  }
+
+  //If the value to the right of us isn't out of bounds.
+  if ( st_x < st_width-1 ) {
+    if ( v_picture [ (st_x+1) + st_y*st_width ] != ui8_value_to_fill_with ) {
+      flood_fill ( v_picture, st_width, st_height, st_x+1, st_y, ui8_value_to_fill_with );
+    }
+  }
+
+  //If the value above us isn't out of bounds.
+  if ( st_y > 0 ) {
+    if ( v_picture [ st_x + (st_y-1)*st_width ] != ui8_value_to_fill_with ) {
+      flood_fill ( v_picture, st_width, st_height, st_x, st_y-1, ui8_value_to_fill_with );
+    }
+  }
+
+  //If the value below us isn't out of bounds.
+  if ( st_y < st_height - 1 ) {
+    if ( v_picture [ st_x + (st_y+1)*st_width ] != ui8_value_to_fill_with ) {
+      flood_fill ( v_picture, st_width, st_height, st_x, st_y+1, ui8_value_to_fill_with );
+    }
+  }
+}
+
+void show_picture (
+  const std::vector<uint8_t> &v_picture,
+  size_t st_width,
+  size_t st_height
+) {
+  const uint8_t *lpui8_p = v_picture .data (  );
+  for ( size_t st_y = 0; st_y < st_height; st_y ++  ) {
+    for ( size_t st_x = 0; st_x < st_width; st_x ++ ) {
+      fprintf ( stdout, "%c", *lpui8_p ? '1' : '0' );
+      lpui8_p ++;
+    }
+    fprintf ( stdout, "\n" );
+  }
+}
+
+int main ( void ) {
+
+  uint8_t ui8ary_picture [] = {
+    0, 0, 0, 0, 0, 0, 0, 0, //8w
+    0, 0, 1, 1, 1, 1, 0, 0,
+    0, 1, 0, 0, 0, 1, 0, 0, //2*8 + 2
+    0, 1, 0, 0, 0, 0, 1, 0,
+    0, 0, 1, 0, 0, 1, 0, 0,
+    0, 0, 0, 1, 1, 0, 0, 0 //6h
+  };
+  std::vector<uint8_t> v_picture;
+  v_picture .insert (
+    v_picture .end (  ),
+    ui8ary_picture,
+    &ui8ary_picture [ sizeof ( ui8ary_picture ) ]
+  );
+
+  show_picture (
+    v_picture,
+    8, //width
+    6 //height
+  );
+
+  flood_fill (
+    v_picture,
+    8, //width
+    6, //height
+    2, //x
+    2, //y
+    1
+  );
+
+  show_picture (
+    v_picture,
+    8, //width
+    6 //height
+  );
+
+
+  return 0;
+}
