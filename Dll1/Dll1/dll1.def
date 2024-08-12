@@ -1,0 +1,3 @@
+LIBRARY dll1
+EXPORTS
+add
