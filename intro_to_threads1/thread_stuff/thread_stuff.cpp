@@ -115,7 +115,7 @@ int WINAPI WinMain (
   HWND h_window = 0;
   MSG msg = { 0 };
   WNDCLASSEXW wc = { 0 };
-  wc .cbSize = sizeof ( WNDCLASSEX );
+  wc .cbSize = sizeof ( WNDCLASSEXW );
   wc .style = CS_HREDRAW | CS_VREDRAW;
   wc .lpfnWndProc = thread_stuff_main_window_procedure;
   //wc .cbClsExtra;
