@@ -12,6 +12,11 @@
 #include "stdint.h"
 #include "inttypes.h"
 
+#include <stdexcept>
+#include <initializer_list>
+#include <bit> //std::bit_ceil --> ceil(log(n)/log(2))
+#include <new>
+
 #ifndef DEBUG_PRINTF_MACRO
 #define DEBUG_PRINTF_MACRO
 #define debug_printf(...) \
@@ -37,10 +42,10 @@ class vector {
 
   public:
     vector (  );
+    vector ( typename std::initializer_list<T> initializers );
     ~vector (  );
-    //bool push_back ( const T t );
     bool push_back ( const T &t );
-    //void move_back ( T &&t ); //std::move ( t )
+    bool push_back ( T &&t );
 
     const T *begin ( void ) const; //for ( const auto &v : vector_instance ) { ... }
     const T *end ( void ) const;
