@@ -27,8 +27,8 @@
 #include "super_enum.h"
 #include <cstdint>
 
-#ifdef DO_STUFF_IMPL
-#  undef DO_STUFF_IMPL
+#ifdef IMPLEMENT_PROJECT_ENUMS
+#  undef IMPLEMENT_PROJECT_ENUMS
 #  define ENUM_MACRO_TYPE super_enum_impl
 #else
 #  define ENUM_MACRO_TYPE super_enum_decl
@@ -41,6 +41,16 @@ ENUM_MACRO_TYPE (
   a,
   c,
   b
+);
+
+ENUM_MACRO_TYPE (
+  ns_debugging_output,
+  debugging_output,
+  uint8_t,
+  file_handling,
+  encryption,
+  ssl_validation,
+  client_connections
 );
 
 #endif

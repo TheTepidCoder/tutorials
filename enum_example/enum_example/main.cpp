@@ -7,14 +7,61 @@
  been inserted or old ones being reorded.
 */
 #include <iostream>
+#include <format> //std::vformat_to
+#include <print> //std::print
+#include <iterator>
 #include <cstring>
 #include <cstdint> //u?int#_t
 
+/*
+#define debug_printf(out, sz_format_string, ...) \
+  fprintf ( out, "[%s:%" PRIu64 "] ", __FILE__, static_cast<uint64_t> ( __LINE__ ) ); \
+  fprintf ( out, sz_format_string, __VA_ARGS__ ); \
+  fflush ( out );
+*/
+
+#define DEBUG_MODE
+
 //#include "super_enum.h"
-#define DO_STUFF_IMPL
+#define IMPLEMENT_PROJECT_ENUMS
 #include "enums.h"
 
 void foo ( void ); //from extra.cpp
+
+
+/*
+#define DEBUGGING_OUTPUT_FILTERS \
+  (1 << ns_debugging_output::file_handling) | \
+  (1 << ns_debugging_output::encryption)
+*/
+const uint8_t gui8_debugging_output_filters =
+  (1 << ns_debugging_output::debugging_output::file_handling) |
+  (1 << ns_debugging_output::debugging_output::encryption);
+
+#ifdef DEBUG_MODE
+#  define debug_printf(out, sz_format_string, ...) \
+     std::print ( out, "[{}:{}] ", __FILE__, __LINE__ ); \
+     std::print ( out, sz_format_string, __VA_ARGS__ ); \
+     std::cout << std::flush
+
+#  define cpp20_debug_printf(out, sz_format_string, ...) \
+     std::vformat_to ( out, "[{}:{}] ", std::make_format_args ( __FILE__, __LINE__ ) ); \
+     std::vformat_to ( out, sz_format_string, std::make_format_args ( __VA_ARGS__ ) ); \
+     std::cout << std::flush;
+
+#  define filter_debug_printf(filter_type, out, sz_format_string, ...) \
+     if constexpr ( (1 << filter_type) & gui8_debugging_output_filters ) { \
+       std::print ( out, "[{}:{}] ", __FILE__, __LINE__ ); \
+       std::print ( out, sz_format_string, __VA_ARGS__ ); \
+       std::cout << std::flush; \
+     }
+#else
+#  define debug_printf(...)
+#  define filter_debug_printf(...)
+#  define cpp20_debug_printf(...)
+#endif
+
+
 
 /*
 #define super_enum(namespace_name, enum_name, enum_type, ...) \
@@ -94,6 +141,13 @@ int main () {
   int y = ns_ages::ages::three;
   std::cout << y << std::endl;
 
+  std::ostream_iterator<char> out { std::cout };
+  cpp20_debug_printf (
+    out,
+    "This is {}\n",
+    "really something"
+  );
+
   //No longer required with my new class,
   //ns_stuff::__dummy_instantiator being
   //generated and instantiated.
@@ -109,6 +163,21 @@ int main () {
 }
 
   foo (  );
+
+
+  debug_printf (
+    std::cout,
+    "This is only a {}\n",
+    "test"
+  );
+
+  filter_debug_printf (
+    //ns_debugging_output::debugging_output::ssl_validation,
+    ns_debugging_output::debugging_output::file_handling,
+    std::cout,
+    "Attempting to load the file \"{}\"\n",
+    "tacos.txt"
+  );
 
   return 0;
 }

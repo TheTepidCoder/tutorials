@@ -316,7 +316,7 @@ void window_manager::update (
 ) {
   GetClientRect ( m_h_window, &m_client_rect );
 
-
+/*
   switch ( m_st_phase_index ) {
     case 0:
       phase1 ( uMsg, wParam, lParam );
@@ -331,9 +331,9 @@ void window_manager::update (
       phase4 ( uMsg, wParam, lParam );
     break;
   }
+*/
 
 
-/*
   //Call the window procedure (callback function for WINAPI messages)
   //that relates to the current setup phase.
   (this ->*m_fnary_phases [ m_st_phase_index ]) (
@@ -341,7 +341,7 @@ void window_manager::update (
     wParam,
     lParam
   );
-*/
+
 
   if ( uMsg == WM_WINDOWPOSCHANGED ) {
     adjust_common_elements (  );
@@ -356,7 +356,7 @@ void window_manager::update (
       return ;
     }
 
-    set_phase ( wParam - 0x30 );
+    set_phase ( st_phase_index );
   }
   else if ( uMsg == WM_LBUTTONDOWN ) {
     SetFocus ( m_h_window );
