@@ -1,0 +1,4 @@
+This is some text that I want to keep.
+//This is a comment that I'll delete.
+This is some more text that we'll keep.
+This is a mixture//of both.
