@@ -5,12 +5,12 @@
  generated at compile-time in prepared statements.
  Any extra arguments would cause an SQLite3 run-time
  complaint -- as would having too few of them.
- All that's missing is BLOB type handling. This
- could use something like a type specialization
- for std::vector<uint8_t>.
+ BLOB column types are handled by std::vector<uint8_t>.
 
  //To build:
- // g++ test.cpp -l:libsqlite3.a -o test
+ // g++ sqlite_example.cpp -l:libsqlite3.a -o sqlite_example
+ //Debug mode:
+ // g++ -Wall -g -static -std=c++20 sqlite_example.cpp -l:libsqlite3.a -o sqlite_example
 
 MIT License
 
@@ -38,10 +38,45 @@ SOFTWARE.
 #include <iostream>
 #include <type_traits>
 #include <cstdint> //u?int\d{1,2}_t
+#include <cinttypes> //PRI[ui][1368][246]
 #include <string>
 #include <vector>
 
 #include <cstdio>
+
+#ifndef DEBUG_MODE
+#  define DEBUG_MODE 0
+#endif
+
+#if DEBUG_MODE
+  //For demangling a variable type during debugging.
+#  include <cxxabi.h>
+#endif
+
+
+#ifndef dump_case
+#  define dump_case(x) case x: return #x;
+#endif
+
+
+#ifndef debug_printf
+#  if DEBUG_MODE
+#    define debug_printf(fh,...) \
+       fprintf ( \
+         fh, \
+         "[%s:%" PRIu64 "] \"%s\" --> " \
+         __FILE__, \
+         (uint64_t) __LINE__,
+         __FUNCTION__ \
+       ); \
+       fprintf ( \
+         fh, \
+         __VA_ARGS__ \
+       )
+#  else
+#    define debug_printf(fh,...)
+#  endif
+#endif
 
 namespace ns_sqlite_types {
 enum sqlite_types : uint8_t {
@@ -52,6 +87,15 @@ enum sqlite_types : uint8_t {
   text = 4 //std::string
 };
 }
+
+namespace ns_sqlite_return_codes {
+enum sqlite_return_codes : uint8_t {
+  error = 0,
+  no_records = 1,
+  records = 2
+};
+}
+
 
 class sqlite_type {
   private:
@@ -64,12 +108,21 @@ class sqlite_type {
     ns_sqlite_types::sqlite_types m_ste_sqlite_type = ns_sqlite_types::unknown;
 
   public:
+    //default constructor isn't allow, since we demand a type to reference
     sqlite_type (  ) = delete;
+    //Copy and move constructors
+    sqlite_type ( const sqlite_type & );
+    sqlite_type ( sqlite_type && );
+
     sqlite_type ( int64_t &i64 );
     sqlite_type ( double &dbl );
     sqlite_type ( std::vector<uint8_t> &vec );
     sqlite_type ( std::string &str );
     ~sqlite_type (  );
+
+    //Copy/Move assignment operator overloads
+    sqlite_type &operator= ( const sqlite_type & );
+    sqlite_type &operator= ( sqlite_type && ) noexcept;
 
     sqlite_type &operator= ( const unsigned char * );
     void assign_blob ( const void *, size_t );
@@ -77,13 +130,75 @@ class sqlite_type {
     sqlite_type &operator= ( const double & );
 
     ns_sqlite_types::sqlite_types type ( void ) const noexcept;
+
+    static const char *get_sqlite_type_name (
+      ns_sqlite_types::sqlite_types ste_type
+    ) noexcept;
+    void handle_type_mismatch (
+      const char *lpsz_function_name,
+      ns_sqlite_types::sqlite_types ste_t
+    ) noexcept;
 };
+
+sqlite_type::sqlite_type ( const sqlite_type &old ) {
+  //Copy the variable reference and meta type enum value.
+  m_ste_sqlite_type = old .m_ste_sqlite_type;
+  memcpy (
+    &m_u_type,
+    &old .m_u_type,
+    sizeof ( m_u_type )
+  );
+}
+sqlite_type::sqlite_type ( sqlite_type &&old ) {
+  //Copy the variable reference.
+  m_ste_sqlite_type = old .m_ste_sqlite_type;
+
+  //Prevent the old instance that we're moving from freeing anything.
+  old .m_ste_sqlite_type = ns_sqlite_types::sqlite_types::unknown;
+
+  //Copy meta type enum value.
+  memcpy (
+    &m_u_type,
+    &old .m_u_type,
+    sizeof ( m_u_type )
+  );
+}
+sqlite_type &sqlite_type::operator= ( const sqlite_type &old ) {
+  //Copy the type meta information and variable reference.
+  m_ste_sqlite_type = old .m_ste_sqlite_type;
+  memcpy (
+    &m_u_type,
+    &old .m_u_type,
+    sizeof ( m_u_type )
+  );
+
+  //Return a reference to this object for chaining. E.g. inst = inst2 = inst3;
+  return *this;
+}
+sqlite_type &sqlite_type::operator= ( sqlite_type &&old ) noexcept {
+  m_ste_sqlite_type = old .m_ste_sqlite_type;
+  old .m_ste_sqlite_type = ns_sqlite_types::sqlite_types::unknown;
+  memcpy (
+    &m_u_type,
+    &old .m_u_type,
+    sizeof ( m_u_type )
+  );
+/*
+  //Clear the variable reference as well. This is slower and provides no tangible benefit.
+  memset (
+    &old .m_u_type,
+    0,
+    sizeof ( m_u_type )
+  );
+*/
+  return *this;
+}
 
 sqlite_type::sqlite_type (
   int64_t &i64
 ) :
-  m_ste_sqlite_type ( ns_sqlite_types::integer ),
-  m_u_type { .lpi64 = &i64 }
+  m_u_type { .lpi64 = &i64 },
+  m_ste_sqlite_type ( ns_sqlite_types::integer )
 {
   fprintf ( stdout, "i64: %p\n", &i64 );
 }
@@ -91,8 +206,8 @@ sqlite_type::sqlite_type (
 sqlite_type::sqlite_type (
   double &dbl
 ) :
-  m_ste_sqlite_type ( ns_sqlite_types::real ),
-  m_u_type { .lpdbl = &dbl }
+  m_u_type { .lpdbl = &dbl },
+  m_ste_sqlite_type ( ns_sqlite_types::real )
 {
   fprintf ( stdout, "dbl: %p\n", &dbl );
 }
@@ -100,8 +215,8 @@ sqlite_type::sqlite_type (
 sqlite_type::sqlite_type (
   std::vector<uint8_t> &vec
 ) :
-  m_ste_sqlite_type ( ns_sqlite_types::blob ),
-  m_u_type { .lpvec = &vec }
+  m_u_type { .lpvec = &vec },
+  m_ste_sqlite_type ( ns_sqlite_types::blob )
 {
   fprintf ( stdout, "vec: %p\n", &vec );
 }
@@ -116,29 +231,97 @@ sqlite_type::sqlite_type (
 }
 
 sqlite_type::~sqlite_type (  ) {
+/*
+  //I don't know what I was thinking. We hold a non-owning
+  //reference to the underlying variable type and do so
+  //only so as to allow reading from / writing to it when
+  //doing select/update/insert queries.
   if ( m_ste_sqlite_type == ns_sqlite_types::blob ) {
     delete m_u_type .lpvec;
   }
   if ( m_ste_sqlite_type == ns_sqlite_types::text ) {
     delete m_u_type .lpstr;
   }
+*/
 }
 
 sqlite_type &sqlite_type::operator= ( const unsigned char *lpsz_string ) {
-  *m_u_type .lpstr = (const char *) lpsz_string;
+  //!! TODO: Handle implicit type conversion from const unsigned char * to
+  //all supported types. atoi, atod for integer/real. blob/unknown wouldn't
+  //have any meaningful conversions and shouldn't be usable.
+  switch ( m_ste_sqlite_type ) {
+    case ns_sqlite_types::text: break;
+    case ns_sqlite_types::blob:
+    case ns_sqlite_types::real:
+    case ns_sqlite_types::integer:
+    case ns_sqlite_types::unknown: {
+      handle_type_mismatch ( __FUNCTION__, ns_sqlite_types::integer );
+      return *this; //won't ever occur bceause handle_type_mismatch calls exit(1).
+    }
+  }
+
+  //fprintf ( stdout, "Note: We're assigning an sqlite_type object to (const char *) \"%s\"\n", lpsz_string );
+
+  m_u_type .lpstr ->assign (
+    (const char *) lpsz_string
+  );
   return *this;
 }
 void sqlite_type::assign_blob ( const void *lpv_data, size_t st_size ) {
-  *m_u_type .lpvec = std::vector<uint8_t> (
+  switch ( m_ste_sqlite_type ) {
+    case ns_sqlite_types::blob: break;
+
+    case ns_sqlite_types::integer:
+    case ns_sqlite_types::real:
+    case ns_sqlite_types::text:
+    case ns_sqlite_types::unknown: {
+      handle_type_mismatch ( __FUNCTION__, ns_sqlite_types::integer );
+      return ;
+    }
+  }
+
+  m_u_type .lpvec ->assign (
     (const uint8_t*) lpv_data,
     (const uint8_t*) lpv_data + st_size
   );
+
+  debug_printf (
+    stdout,
+    "Blob range: [%p, %p]\n",
+    m_u_type .lpvec ->data (  ),
+    m_u_type .lpvec ->data (  ) + st_size - 1
+  );
 }
+
 sqlite_type &sqlite_type::operator= ( const int64_t &i64 ) {
+  switch ( m_ste_sqlite_type ) {
+    case ns_sqlite_types::integer: break;
+
+    case ns_sqlite_types::blob:
+    case ns_sqlite_types::real: //!! TODO: Consider allowing for implicit type conversion between double<->int
+    case ns_sqlite_types::text:
+    case ns_sqlite_types::unknown: {
+      handle_type_mismatch ( __FUNCTION__, ns_sqlite_types::integer );
+      return *this; //won't ever occur bceause handle_type_mismatch calls exit(1).
+    }
+  }
+
   *m_u_type .lpi64 = i64;
   return *this;
 }
 sqlite_type &sqlite_type::operator= ( const double &dbl ) {
+  switch ( m_ste_sqlite_type ) {
+    case ns_sqlite_types::real: break;
+
+    case ns_sqlite_types::blob:
+    case ns_sqlite_types::integer: //!! TODO: Consider allowing for implicit type conversion between double<->int
+    case ns_sqlite_types::text:
+    case ns_sqlite_types::unknown: {
+      handle_type_mismatch ( __FUNCTION__, ns_sqlite_types::integer );
+      return *this; //won't ever occur bceause handle_type_mismatch calls exit(1).
+    }
+  }
+
   *m_u_type .lpdbl = dbl;
   return *this;
 }
@@ -146,6 +329,45 @@ ns_sqlite_types::sqlite_types sqlite_type::type ( void ) const noexcept {
   return m_ste_sqlite_type;
 }
 
+const char *sqlite_type::get_sqlite_type_name (
+  ns_sqlite_types::sqlite_types ste_type
+) noexcept {
+  switch ( ste_type ) {
+    dump_case ( ns_sqlite_types::unknown )
+    dump_case ( ns_sqlite_types::integer )
+    dump_case ( ns_sqlite_types::blob )
+    dump_case ( ns_sqlite_types::real )
+    dump_case ( ns_sqlite_types::text )
+
+    default: break;
+  }
+  fprintf (
+    stderr,
+    "An unknown type was passed to %s.\n",
+    __FUNCTION__
+  );
+  fflush ( stderr );
+  exit ( 1 );
+  return 0;
+}
+
+//This will dump an error message to stderr and terminate the application.
+void sqlite_type::handle_type_mismatch (
+  const char *lpsz_function_name,
+  ns_sqlite_types::sqlite_types ste_t
+) noexcept {
+
+  fprintf (
+    stderr,
+    "[%s] Error: \"%s\" passed to instance handling \"%s\"\n",
+    lpsz_function_name,
+    sqlite_type::get_sqlite_type_name ( m_ste_sqlite_type ),
+    sqlite_type::get_sqlite_type_name ( ste_t )
+  );
+  fflush ( stderr );
+  exit ( 1 );
+
+}
 ///////
 
 
@@ -153,8 +375,8 @@ template<typename T, typename ...Targs>
 bool bind_query_arguments (
   sqlite3_stmt *stmt,
   int i_one_based_column_index,
-  T t_value,
-  Targs ...fargs
+  const T &t_value,
+  const Targs &...fargs
 ) {
   //std::cout << "Type identifier: \"" << typeid ( T ).name() << "\"\n";
   if constexpr ( std::is_floating_point<T>::value ) {
@@ -174,7 +396,7 @@ bool bind_query_arguments (
       SQLITE_OK != sqlite3_bind_text (
         stmt,
         i_one_based_column_index,
-        t_value,
+        t_value .c_str (  ),
         -1,
         SQLITE_STATIC
       )
@@ -182,7 +404,16 @@ bool bind_query_arguments (
       return false;
     }
   }
-  else if constexpr ( std::is_same<T, const char *>::value ) {
+  else if constexpr (
+    std::is_same<
+      std::decay_t<T>, //const char [#] -> const char *
+      char * //const char* (apparently typename std::decay<T>::type e.g. std::decay_t<T> removes const qualifications.
+    >::value //||
+//    std::is_same<
+//      typename std::remove_extent<T>::type, //T[#] -->T[]
+//      typename std::remove_extent<const char(&)[]>::type //std::remove_extent_t<const char[]>
+//    >::value
+  ) {
     std::cout << "Binding a const char * type.\n";
     if (
       SQLITE_OK != sqlite3_bind_text (
@@ -195,6 +426,53 @@ bool bind_query_arguments (
     ) {
       return false;
     }
+  }
+  else if constexpr (
+    std::is_same<
+      std::decay_t<T>, //T,
+      std::vector<uint8_t> //const std::vector<uint8_t>&
+    >::value
+  ) {
+    std::cout << "Binding a BLOB type (via std::vector<uint8_t>).\n";
+    if (
+      SQLITE_OK != sqlite3_bind_blob (
+        stmt,
+        i_one_based_column_index,
+        t_value .data (  ), //Reference to the first byte of the BLOB's buffer.
+        t_value .size (  ), //Size in bytes of the BLOB's buffer.
+        SQLITE_STATIC //It's our responsibility to free the BLOB's buffer.
+      )
+    ) {
+      return false;
+    }
+  }
+  else {
+#if DEBUG_MODE
+    size_t st_length;
+    int i_unknown;
+    const char *lpsz_demangled_type_name = abi::__cxa_demangle (
+      typeid (
+        std::decay_t<decltype(t_value)>
+      ) .name (  ),
+      0,
+      &st_length,
+      &i_unknown
+    );
+
+    fprintf (
+      stderr,
+      "Error: A variadic type (%s) that couldn't be resolved was passed to bind_query_arguments.\n",
+      lpsz_demangled_type_name
+    );
+#else
+    //If we're not in debug mode, just show the mangled type name.
+    fprintf (
+      stderr,
+      "Error: A variadic type (%s) that couldn't be resolved was passed to bind_query_arguments.\n",
+      typeid ( t_value ) .name (  )
+    );
+#endif
+    exit ( 1 );
   }
 
   if constexpr ( sizeof...(fargs) ) {
@@ -215,7 +493,7 @@ template<typename ...Targs>
 bool update (
   sqlite3 *db,
   const char *lpsz_query,
-  Targs ...fargs
+  const Targs &...fargs
 ) {
   sqlite3_stmt *stmt = nullptr;
 
@@ -263,7 +541,7 @@ template<typename ...Targs>
 int64_t insert (
   sqlite3 *db,
   const char *lpsz_query,
-  Targs ...fargs
+  const Targs &...fargs
 ) {
   sqlite3_stmt *stmt = nullptr;
 
@@ -308,11 +586,11 @@ int64_t insert (
 }
 
 template<typename ...Targs>
-bool select (
+[[nodiscard]] ns_sqlite_return_codes::sqlite_return_codes select (
   sqlite3 *db,
   const char *lpsz_query,
-  std::vector<sqlite_type> &vec_vec_output_args,
-  Targs ...fargs
+  std::vector<sqlite_type> &vec_output_args,
+  const Targs &...fargs
 ) {
   sqlite3_stmt *stmt = nullptr;
 
@@ -325,7 +603,7 @@ bool select (
   );
   if ( i_ret != SQLITE_OK ) {
     std::cerr << "Error: \"" << sqlite3_errmsg ( db ) << "\"." << std::endl;
-    return false;
+    return ns_sqlite_return_codes::error;
   }
 
   if constexpr ( sizeof...(fargs) ) {
@@ -340,19 +618,24 @@ bool select (
       std::cerr << "Error: Failed to bind one or more arguments.\n";
       std::cerr << sqlite3_errmsg ( db ) << std::endl;
       sqlite3_finalize ( stmt );
-      return false;
+      return ns_sqlite_return_codes::error;
     }
   }
 
   i_ret = sqlite3_step ( stmt );
   if ( i_ret != SQLITE_ROW && i_ret != SQLITE_DONE ) {
     std::cerr << "Error: Stepping through SQLite3 statment failed." << std::endl;
-    return false;
+    return ns_sqlite_return_codes::error;
+  }
+
+  //!! TODO: Change the return type to signal success with data; success without data; failure.
+  if ( i_ret == SQLITE_DONE ) {
+    return ns_sqlite_return_codes::no_records;
   }
 
 //!!!!!
   size_t st_column_index = 0;
-  for ( auto &output_arg : vec_vec_output_args ) {
+  for ( auto &output_arg : vec_output_args ) {
     switch ( output_arg .type() ) {
       case ns_sqlite_types::sqlite_types::integer: {
 std::cout << "Assigning integer.\n" << std::flush;
@@ -382,7 +665,7 @@ std::cout << "Assigning blob.\n" << std::flush;
       default: {
         std::cerr << "Error: Unknown type for SQLite3 output argument.\n";
         sqlite3_finalize ( stmt );
-        return false;
+        return ns_sqlite_return_codes::sqlite_return_codes::error;
       } //default case
     } //switch for each type of argument
 
@@ -395,7 +678,7 @@ std::cout << "Assigning blob.\n" << std::flush;
 
 std::cout << "Done with select function.\n" << std::flush;
 
-  return true;
+  return ns_sqlite_return_codes::records;
 }
 
 
@@ -426,6 +709,7 @@ int main ( void ) {
 `str_name` text,
 `i64_age` integer,
 `dbl_height` real,
+`blob_data` blob,
 `id` integer primary key autoincrement
 );)#"
   );
@@ -437,21 +721,26 @@ int main ( void ) {
 
   std::cout << "Table created." << std::endl;
 
+  std::vector<uint8_t> v_blob = { 0, 1, 2, 3 };
 
   int64_t i64_new_record_identifier = insert (
     db,
     R"#(insert into `users` (
   `str_name`,
   `i64_age`,
-  `dbl_height`
+  `dbl_height`,
+  `blob_data`
 ) values (
   ?, -- str_name
   ?, -- i64_age
-  ?  -- dbl_height
+  ?, -- dbl_height
+  ?  -- blob_data
 );)#",
-    "BetterCoder",
+    //"BetterCoder",
+    "TheTepidCoder", //Ensure that a user with the name "TheTepidCoder" exists for the select test, later on.
     104,
-    4.2f
+    4.2f,
+    v_blob
   );
   if ( ! b_success ) {
     std::cerr << "Error: Failed to insert a new row into the users table.\n";
@@ -459,6 +748,13 @@ int main ( void ) {
     return 0;
   }
   std::cout << "New record identifier: " << (int) i64_new_record_identifier << std::endl;
+
+  v_blob .clear (  );
+  fprintf (
+    stdout,
+    "[%" PRIu64 "] The blob vector was cleared to ensure that we're not viewing stale data.\n",
+    v_blob .size (  )
+  );
 
   std::string str_name;
   int64_t i64_age;
@@ -475,13 +771,31 @@ int main ( void ) {
   vec_types .emplace_back ( str_name );
   vec_types .emplace_back ( i64_age );
   vec_types .emplace_back ( dbl_height );
+  vec_types .emplace_back ( v_blob );
 
-  select (
+  ns_sqlite_return_codes::sqlite_return_codes rc = select (
     db,
     R"#(select * from `users` where `str_name` = ?;)#",
     vec_types,
     "TheTepidCoder"
   );
+  if ( rc == ns_sqlite_return_codes::sqlite_return_codes::error ) {
+    fprintf ( stderr, "Error: The selection failed with an SQLITE3 error.\n" );
+    goto cleanup;
+  }
+  else if ( rc == ns_sqlite_return_codes::sqlite_return_codes::no_records ) {
+    fprintf (
+      stdout,
+      "Note: While the query completed successfully, there were no records matching the specified filters.\n"
+    );
+    goto cleanup;
+  }
+  else {
+    fprintf (
+      stdout,
+      "Note: The query completed successfully and returned some records.\n"
+    );
+  }
 /*
   select (
     db,
@@ -497,9 +811,18 @@ int main ( void ) {
   std::cout << "Returned text: \"" << str_name << "\"\n";
   std::cout << "Returned integer: \"" << i64_age << "\"\n";
   std::cout << "Returned real: \"" << dbl_height << "\"\n";
+  for ( const auto &ui8 : v_blob ) {
+    std::cout << "value: " << (int) ui8 << std::endl;
+  }
 
+
+//We can jump here early to free the database connection,
+//if an error occurs.
+cleanup:
 
   sqlite3_close ( db );
+
+  std::cout << "Terminating the application." << std::endl;
 
   return 0;
 }
